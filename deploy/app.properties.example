@@ -1,0 +1,13 @@
+# TiDB Java Demo —— 服务器端配置模板
+# 部署时复制为 /opt/tidb-demo/app.properties，并 chmod 600、属主 tidbdemo
+# 密码使用 ${ENV:VAR} 占位符，运行时从 systemd EnvironmentFile 注入，不落明文
+
+jdbc.url=jdbc:mysql://127.0.0.1:4000/demo_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+jdbc.root.url=jdbc:mysql://127.0.0.1:4000?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+jdbc.user=demo
+jdbc.password=${ENV:TIDB_DEMO_PASSWORD}
+jdbc.dbname=demo_db
+
+http.host=127.0.0.1
+http.port=18080
+http.backlog=64

@@ -1,0 +1,8 @@
+target/
+*.class
+app.properties
+app.env
+*.local
+*.log
+.idea/
+*.iml
