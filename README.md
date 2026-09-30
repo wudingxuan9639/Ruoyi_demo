@@ -1,54 +1,62 @@
 # Ruoyi_demo
 
-一个**零第三方 Web 框架**的 Java 增删改查（CRUD）Demo：JDK 自带 `HttpServer` + JDBC + 原生 HTML/CSS/JS，
-后端对接 **TiDB v8.5.7**（MySQL 协议），带一个内嵌的 Web 管理页面，可对真实数据库做增、删、改、查、事务转账与只读 SQL 查询。
+基于 **RuoYi（若依）脚手架 Spring Boot 3.x 分支** 重写的增删改查示例：
+后端 Spring Boot + MyBatis + Druid + PageHelper，前端 **Vue 3 + Element Plus + Axios**，
+数据库对接 **TiDB v8.5.7**（MySQL 协议兼容）。
 
-> 本仓库是部署验证 Demo 的**源码归档**。代码保留了当时在服务器上真实运行过的版本，未做重构，
-> 目的有二：①作为可复现的最小 CRUD 样例；②作为迁移到 RuoYi（若依）技术栈时的对照底稿。
-> 完整技术栈说明见 **[Ruoyi技术框架一览.md](./Ruoyi技术框架一览.md)**。
-
----
-
-## 一、特性一览
-
-| 能力 | 说明 |
-|---|---|
-| 列表 / 分页 / 搜索 | `LIMIT ? OFFSET ?` + `name LIKE ? OR id LIKE ?`，返回总数用于分页 |
-| 新增 | `INSERT INTO account (name, balance) VALUES (?,?)` |
-| 编辑 | `UPDATE account SET name=?, balance=? WHERE id=?` |
-| 删除 | `DELETE FROM account WHERE id=?`（页面二次确认） |
-| 转账 | 事务：先扣（带 `balance >= ?` 条件）再加，失败 `ROLLBACK` |
-| 聚合统计 | `COUNT/SUM/MAX/MIN` |
-| 只读 SQL 控制台 | 白名单仅放行 `SELECT/SHOW/EXPLAIN/DESC`，最多 200 行 |
-| 自举 bootstrap | 首次启动自动建库、建账号、建表（`CREATE TABLE IF NOT EXISTS`） |
-| 一次性验证 | `once` 模式跑 12 项端到端检查并打印报告 |
-
-默认只监听 `127.0.0.1:18080`，公网/内网 IP 都访问不到，需通过 SSH 本地转发访问。
+> 本仓库此前是"零第三方框架"版本（JDK 自带 HttpServer + JDBC + 原生 JS）。
+> 现按你的要求用 RuoYi 脚手架重写并替换，旧版本保留在 `archive/no-framework-demo` 分支。
+> 完整技术栈说明与 RuoYi 官方对照见 **[Ruoyi技术框架一览.md](./Ruoyi技术框架一览.md)**。
 
 ---
 
-## 二、目录结构
+## 一、已验证结果（真实 TiDB，非模拟）
+
+在服务器 TiDB v8.5.7 上实测通过（通过 SSH 隧道连接，本地启动应用）：
+
+| # | 场景 | 结果 |
+|---|---|---|
+| 1 | 分页列表 `pageNum/pageSize` | 返回 `total=3`、`rows` 三条，`PageHelper` 自动追加 limit |
+| 2 | 新增账户 dave | `{"code":200,"msg":"操作成功"}` |
+| 3 | 修改余额 800 → 1500 | 成功，落库确认 |
+| 4 | 按 ID 查询 | 返回完整实体 |
+| 5 | 关键字搜索 `searchValue=dave` | 命中 1 条 |
+| 6 | 聚合统计 | `cnt=4 sum=4000 max=1500 min=500`，`dbVersion=8.0.11-TiDB-v8.5.7` |
+| 7 | 转账 100（1→2） | 事务提交，余额 1000/1000 → **900/1100** |
+| 8 | 超额转账 999999 | 抛出业务异常 → **事务回滚**，余额不变 |
+| 9 | 删除账户 | 成功，再查返回"账户不存在" |
+| 10 | 页面与静态资源 | `index.html` / `vendor/*` 全部 200 |
+
+---
+
+## 二、目录结构（对齐 RuoYi 分层）
 
 ```
 Ruoyi_demo/
-├── pom.xml                                    # Maven 工程（唯一依赖：mysql-connector-j 8.4.0）
-├── src/main/java/com/example/tidbdemo/
-│   ├── Main.java          # 入口：bootstrap / once(验证) / serve(服务)
-│   ├── Config.java        # properties 配置 + ${ENV:VAR} 占位符解析
-│   ├── Db.java            # JDBC 连接（DriverManager，无连接池）
-│   ├── AccountRepo.java   # 数据访问：CRUD / 搜索 / 统计 / 建表
-│   ├── HttpApi.java       # JDK HttpServer 路由 + REST 接口
-│   ├── Json.java          # 手写 JSON 序列化/反序列化与转义
-│   └── Report.java        # 单行 / 多行查询辅助
-├── src/main/resources/webui/index.html        # 内嵌 Web 管理页面（HTML+CSS+原生 JS，无框架无构建）
-├── deploy/
-│   ├── app.properties.example                 # 应用配置模板（密码用环境变量占位）
-│   ├── app.env.example                        # systemd EnvironmentFile 模板
-│   ├── tidb-demo.service                      # systemd 单元
-│   ├── open-ui.sh                             # 本机一键建 SSH 隧道并打开页面
-│   └── close-ui.sh                            # 关闭本机隧道
-├── Ruoyi技术框架一览.md                        # 技术栈全景 + 与 RuoYi 逐层对照 + 迁移建议
-└── .gitignore
+├── pom.xml                                        # Spring Boot 3.3.13 父工程 + 依赖
+├── sql/tidb_account.sql                           # 建库建表示例数据（TiDB）
+├── src/main/java/com/ruoyi/
+│   ├── RuoYiApplication.java                      # 启动类
+│   ├── framework/config/MyBatisConfig.java        # @MapperScan
+│   ├── framework/web/controller/BaseController.java  # startPage / getDataTable / toAjax
+│   ├── framework/web/domain/{AjaxResult,TableDataInfo,BaseEntity}.java
+│   └── project/demo/
+│       ├── controller/AccountController.java      # /demo/account/**
+│       ├── service/IAccountService.java
+│       ├── service/impl/AccountServiceImpl.java   # @Transactional 转账与批量删除
+│       ├── mapper/AccountMapper.java              # 数据层接口
+│       └── domain/Account.java                    # 实体（继承 BaseEntity）
+├── src/main/resources/
+│   ├── application.yml                            # 主配置（端口、MyBatis、PageHelper）
+│   ├── application-druid.yml                      # Druid 数据源（TiDB 4000 端口）
+│   ├── mybatis/mybatis-config.xml
+│   ├── mapper/demo/AccountMapper.xml              # SQL（含带余额条件的扣款）
+│   ├── sql/schema.sql                             # 启动时幂等建表
+│   └── static/
+│       ├── index.html                             # Vue3 + Element Plus 管理页面
+│       └── vendor/                                # 本地化的 vue/element-plus/axios（离线可用）
+├── Ruoyi技术框架一览.md
+└── README.md
 ```
 
 ---
@@ -57,107 +65,114 @@ Ruoyi_demo/
 
 ### 3.1 前置条件
 
-- **构建机**：JDK 17+、Maven 3.6+（本项目用 JDK 17 / Maven 3.9.16 构建）
-- **数据库**：TiDB 或 MySQL（TiDB v8.5.7 已实测，MySQL 协议兼容）；库名默认 `demo_db`
-- **运行机**：JDK 17（无需 Maven，fat jar 已含全部依赖）
+- JDK 17+、Maven 3.6+
+- TiDB（默认 4000）或 MySQL 5.7+
+- 浏览器（前端依赖已本地化，**无需 Node/npm 构建**）
 
-### 3.2 构建
+### 3.2 准备数据库
 
 ```bash
-mvn -q -DskipTests package
-# 产物：target/tidb-demo.jar（fat jar，约 4.3MB）
+# 方式一：用 mysql 客户端导入
+mysql -h <tidb-host> -P 4000 -u root < sql/tidb_account.sql
+
+# 方式二：只建库，表由应用启动时自动创建（classpath:sql/schema.sql，幂等）
+mysql -h <tidb-host> -P 4000 -u root -e "CREATE DATABASE IF NOT EXISTS ruoyi_demo DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;"
 ```
 
-### 3.3 配置
+### 3.3 配置数据源
 
-```bash
-cp deploy/app.properties.example app.properties
-cp deploy/app.env.example        app.env
-vi app.properties   # 改 jdbc.url / jdbc.user
-vi app.env          # 填 TIDB_DEMO_PASSWORD
-chmod 600 app.properties app.env
+`src/main/resources/application-druid.yml`：
+
+```yaml
+spring:
+  datasource:
+    druid:
+      url: jdbc:mysql://127.0.0.1:4000/ruoyi_demo?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      username: ${DB_USERNAME:root}
+      password: ${DB_PASSWORD:}
 ```
 
-`app.properties` 中密码写作 `${ENV:TIDB_DEMO_PASSWORD}`，运行时由环境变量注入，jar 与配置文件里都没有明文。
-`TIDB_BOOTSTRAP_ROOT_PASSWORD` 用于首次建库建账号（TiDB 初始 root 无密码时留空）。
-
-### 3.4 运行
+密码建议用环境变量注入（避免明文入库）：
 
 ```bash
-# 服务模式（常驻，监听 127.0.0.1:18080）
-java -Dconfig=app.properties -jar target/tidb-demo.jar serve
-
-# 一次性验证（跑 12 项检查后退出，不改常驻状态）
-java -Dconfig=app.properties -jar target/tidb-demo.jar once
+export DB_USERNAME=ruoyi
+export DB_PASSWORD='你的强密码'
 ```
 
-浏览器打开 <http://127.0.0.1:18080/>。若在远端服务器上运行，用本机隧道：
+端口在 `application.yml` 的 `server.port`（默认 8080）。
+
+### 3.4 构建与运行
 
 ```bash
-ssh -f -N -L 18080:127.0.0.1:18080 <user@host>
+mvn -q -DskipTests package          # 产物 target/ruoyi-demo.jar
+java -jar target/ruoyi-demo.jar     # 或 --server.port=18081 覆盖端口
 ```
 
-### 3.5 部署为 systemd 服务
+浏览器打开 <http://127.0.0.1:8080/>（页面在 `static/index.html`，由 Spring Boot 直接托管）。
+
+若数据库在远端服务器，先建隧道再连：
 
 ```bash
-sudo useradd -r -s /sbin/nologin -d /opt/tidb-demo tidbdemo
-sudo mkdir -p /opt/tidb-demo/logs
-sudo cp target/tidb-demo.jar app.properties app.env /opt/tidb-demo/
-sudo cp deploy/tidb-demo.service /etc/systemd/system/
-sudo chown -R tidbdemo:tidbdemo /opt/tidb-demo
-sudo systemctl daemon-reload
-sudo systemctl enable --now tidb-demo
+ssh -f -N -L 4000:127.0.0.1:4000 <user@host>     # 把远端 4000 映射到本机
 ```
 
 ---
 
-## 四、HTTP 接口
+## 四、接口清单（RuoYi 风格响应体）
+
+统一响应：`{"code":200,"msg":"...","data":...}`；分页：`{"total":N,"rows":[...],"code":200}`。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/`、`/index.html`、`/ui` | 管理页面 |
-| GET | `/api/info` | TiDB 版本、库名、TiKV store 状态 |
-| GET | `/api/accounts?keyword=&limit=&offset=` | 分页列表，含 `total` |
-| GET | `/api/accounts?id=N` | 单条查询 |
-| POST | `/api/accounts` `{name,balance}` | 新增 |
-| PUT | `/api/accounts` `{id,name,balance}` | 修改 |
-| DELETE | `/api/accounts` `{id}` | 删除 |
-| POST | `/api/transfer` `{from,to,amount}` | 事务转账，余额不足回滚 |
-| GET | `/api/stats` | 聚合统计 |
-| POST | `/api/query` `{sql}` | 只读 SQL（白名单校验，≤200 行） |
-
-兼容旧路径：`/health`、`/accounts`、`/transfer`、`/stats`。
-
-curl 示例：
+| GET | `/demo/account/list?pageNum=1&pageSize=10&searchValue=` | 分页列表 + 关键字搜索 |
+| GET | `/demo/account/{id}` | 单条详情 |
+| POST | `/demo/account` | 新增 `{name,balance,remark}` |
+| PUT | `/demo/account` | 修改 `{id,name,balance,remark}` |
+| DELETE | `/demo/account/{ids}` | 删除，支持逗号分隔批量（如 `1,2,3`） |
+| POST | `/demo/account/transfer` | 转账 `{fromId,toId,amount}`，余额不足回滚 |
+| GET | `/demo/account/stats` | 聚合统计 + 数据库版本 |
 
 ```bash
-curl -s http://127.0.0.1:18080/api/info
-curl -s -X POST http://127.0.0.1:18080/api/accounts -d '{"name":"carol","balance":500}'
-curl -s -X POST http://127.0.0.1:18080/api/transfer -d '{"from":1,"to":2,"amount":10}'
+curl 'http://127.0.0.1:8080/demo/account/list?pageNum=1&pageSize=5'
+curl -X POST http://127.0.0.1:8080/demo/account -H 'Content-Type: application/json' -d '{"name":"dave","balance":800}'
+curl -X POST http://127.0.0.1:8080/demo/account/transfer -H 'Content-Type: application/json' -d '{"fromId":1,"toId":2,"amount":100}'
 ```
 
 ---
 
-## 五、技术栈速览
+## 五、与完整 RuoYi 的差异（本 Demo 精简掉了什么）
 
-| 层 | 技术 |
-|---|---|
-| 前端 | HTML5 + CSS3（自定义属性 / Grid / Flex）+ 原生 ES6+ JS（fetch、Promise、DOM），**无框架无构建** |
-| 接口 | JDK 内置 `com.sun.net.httpserver.HttpServer`（8 线程池） |
-| 业务 | 纯 Java 手写（无 Spring） |
-| 数据访问 | JDBC 4.3 + `mysql-connector-j` 8.4.0，手动事务 |
-| 存储 | TiDB v8.5.7（PD/TiKV/TiDB），MySQL 8.0 协议兼容 |
-| 构建 | Maven 3.9.16 + maven-shade-plugin 打 fat jar |
-| 部署 | systemd（EnvironmentFile 注入密钥、Restart=on-failure） |
+| 完整 RuoYi | 本 Demo | 说明 |
+|---|---|---|
+| Spring Security + JWT 登录鉴权 | **无** | 内网/本机验证用；生产必须补（见技术文档第 8 节） |
+| Redis 缓存字典/权限 | **无** | 单表演示不需要 |
+| Quartz 定时任务、代码生成、操作日志切面 | **无** | 保留分层与命名规范，便于对照学习 |
+| 多模块（admin/framework/common/system/quartz） | **单模块** | 包路径仍按 `com.ruoyi.framework` / `com.ruoyi.project` 组织 |
+| 前端独立工程（Vue CLI/Vite 构建） | **单页 + 本地 vendor** | 免 Node 构建，双击 jar 即用；可平滑迁到 Vite 工程 |
+| MyBatis-Plus（社区版） | 原生 MyBatis + XML | 更贴近官方 RuoYi-Vue |
 
-> 详细说明、与 RuoYi 的逐层对照以及迁移改造清单，见 **[Ruoyi技术框架一览.md](./Ruoyi技术框架一览.md)**。
+**保留的 RuoYi 核心**：分层结构（controller → service → mapper → domain）、`AjaxResult`/`TableDataInfo`/`BaseEntity`/`BaseController`、
+`startPage()/getDataTable()/toAjax()` 分页与响应范式、Druid 数据源、PageHelper 分页、Mapper XML 写法、`application.yml + application-druid.yml` 配置分离。
 
 ---
 
-## 六、安全说明
+## 六、技术栈速览
 
-- 默认只绑定 `127.0.0.1`，不对外暴露
-- 密码不落盘：配置文件存 `${ENV:VAR}` 占位符，实际值由 systemd `EnvironmentFile`（chmod 600）注入
-- 只读 SQL 接口有服务端白名单，写操作（INSERT/UPDATE/DELETE/DROP）被拒绝
-- 应用账号 `demo` 仅授权 `127.0.0.1`/`localhost`
-- **本 Demo 不含登录鉴权**，仅供内网/本机验证，生产请接入 Spring Security + JWT（见技术文档第 8 节）
+| 层 | 技术 |
+|---|---|
+| 前端 | Vue 3.5 + Element Plus 2.9 + Axios 1.7（本地化到 `static/vendor`，离线可用） |
+| Web | Spring MVC（内嵌 Tomcat 10） |
+| 业务 | Spring Service + `@Transactional` |
+| 数据访问 | MyBatis 3.5 + PageHelper 2.1 + Druid 1.2 连接池 |
+| 驱动 | mysql-connector-j 8.4.0 |
+| 存储 | TiDB v8.5.7（MySQL 8.0 协议兼容） |
+| 构建运行 | Maven / Spring Boot 3.3.13 / JDK 17 |
+
+---
+
+## 七、安全说明
+
+- 默认账号用 `root`，生产请按 `sql/tidb_account.sql` 注释创建专用账号（最小权限）
+- 密码通过环境变量 `DB_USERNAME` / `DB_PASSWORD` 注入，配置文件不含明文
+- **无登录鉴权**，仅限内网/本机验证；公网部署请接入 Spring Security + JWT
+- `spring.sql.init.mode=always` 是为了 Demo 自动建表，生产请改为 `never`，改由 DBA 执行审核过的脚本

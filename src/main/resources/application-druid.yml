@@ -1,0 +1,29 @@
+# Druid 数据源配置（对应 RuoYi 的 application-druid.yml）
+#
+# 连接 TiDB：TiDB 兼容 MySQL 8.0 协议，驱动与 URL 写法与 MySQL 一致，
+# 只需把端口换成 TiDB 的 4000（默认）即可。
+spring:
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    druid:
+      # 数据库 ruoyi_demo 需先创建：见 sql/tidb_account.sql
+      url: jdbc:mysql://127.0.0.1:4000/ruoyi_demo?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      username: ${DB_USERNAME:root}
+      password: ${DB_PASSWORD:}
+      # 连接池
+      initialSize: 5
+      minIdle: 5
+      maxActive: 20
+      maxWait: 60000
+      timeBetweenEvictionRunsMillis: 60000
+      minEvictableIdleTimeMillis: 300000
+      validationQuery: SELECT 1
+      testWhileIdle: true
+      testOnBorrow: false
+      testOnReturn: false
+      # 监控统计（注意：TiDB 下不要开启 wall 防火墙过滤器，避免误拦截）
+      filters: stat
+      stat:
+        log-slow-sql: true
+        slow-sql-millis: 1000

@@ -1,0 +1,39 @@
+# RuoYi 主配置（精简版，仅保留本 Demo 需要的部分）
+server:
+  port: 8080
+  servlet:
+    context-path: /
+  tomcat:
+    uri-encoding: UTF-8
+
+spring:
+  profiles:
+    active: druid
+  mvc:
+    throw-exception-if-no-handler-found: false
+  jackson:
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
+  # Demo 便利开关：启动时自动执行 classpath:sql/schema.sql 建表（幂等）
+  # 生产请改为 never，改用 DBA 审核过的脚本
+  sql:
+    init:
+      mode: always
+      continue-on-error: false
+
+# MyBatis（对应 RuoYi application.yml 中的 mybatis 段）
+mybatis:
+  typeAliasesPackage: com.ruoyi.project.**.domain
+  mapperLocations: classpath*:mapper/**/*Mapper.xml
+  configLocation: classpath:mybatis/mybatis-config.xml
+
+# PageHelper 分页插件
+pagehelper:
+  helperDialect: mysql
+  reasonable: true
+  supportMethodsArguments: true
+  params: count=countSql
+
+logging:
+  level:
+    com.ruoyi.project.demo.mapper: debug

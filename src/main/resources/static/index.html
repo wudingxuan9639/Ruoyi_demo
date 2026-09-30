@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RuoYi Demo · 账户管理（Spring Boot + MyBatis + Vue3 + Element Plus）</title>
+  <link rel="stylesheet" href="/vendor/element-plus.css">
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --card: #ffffff;
+      --line: #e4e7ed;
+      --text: #303133;
+      --muted: #909399;
+      --brand: #409eff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                   "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; }
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 18px;
+    }
+    .header h1 { font-size: 20px; margin: 0; font-weight: 600; }
+    .sub { color: var(--muted); font-size: 12px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .card {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 8px; padding: 16px;
+    }
+    .card .label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .card .value { font-size: 22px; font-weight: 600; }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+    .pager { display: flex; justify-content: flex-end; margin-top: 14px; }
+    .tech-tip { color: var(--muted); font-size: 12px; margin-top: 14px; line-height: 1.8; }
+    @media (max-width: 700px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+<div id="app" class="wrap">
+
+  <div class="header">
+    <div>
+      <h1>RuoYi Demo · 账户管理</h1>
+      <div class="sub">
+        Spring Boot 3 + MyBatis + Druid + PageHelper &nbsp;|&nbsp;
+        Vue 3 + Element Plus + Axios &nbsp;|&nbsp;
+        数据库：<span v-if="stats.dbVersion">{{ stats.dbVersion }}</span><span v-else>加载中…</span>
+      </div>
+    </div>
+    <div class="sub">后端接口：<code>/demo/account/**</code></div>
+  </div>
+
+  <!-- 统计卡片 -->
+  <div class="stats">
+    <div class="card"><div class="label">账户数</div><div class="value">{{ stats.cnt ?? '-' }}</div></div>
+    <div class="card"><div class="label">余额合计</div><div class="value">{{ money(stats.sumBalance) }}</div></div>
+    <div class="card"><div class="label">最高余额</div><div class="value">{{ money(stats.maxBalance) }}</div></div>
+    <div class="card"><div class="label">最低余额</div><div class="value">{{ money(stats.minBalance) }}</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <el-input v-model="query.searchValue" placeholder="按 ID 或姓名搜索" clearable
+                style="width: 240px" @keyup.enter="loadList" @clear="loadList"></el-input>
+      <el-button type="primary" @click="loadList">查询</el-button>
+      <el-button @click="resetQuery">重置</el-button>
+      <div style="flex:1"></div>
+      <el-button type="success" @click="openAdd">新增账户</el-button>
+      <el-button type="warning" @click="transferVisible = true">转账（事务）</el-button>
+      <el-button @click="loadStats">刷新统计</el-button>
+    </div>
+
+    <el-table :data="rows" v-loading="loading" border stripe size="default">
+      <el-table-column prop="id" label="ID" width="90"></el-table-column>
+      <el-table-column prop="name" label="账户名称" min-width="160"></el-table-column>
+      <el-table-column prop="balance" label="余额" width="140">
+        <template #default="{ row }">{{ money(row.balance) }}</template>
+      </el-table-column>
+      <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="createdAt" label="创建时间" width="180"></el-table-column>
+      <el-table-column label="操作" width="150" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <div class="pager">
+      <el-pagination
+        v-model:current-page="query.pageNum"
+        v-model:page-size="query.pageSize"
+        :page-sizes="[5, 10, 20, 50]"
+        :total="total"
+        layout="total, sizes, prev, pager, next, jumper"
+        @current-change="loadList"
+        @size-change="loadList">
+      </el-pagination>
+    </div>
+
+    <div class="tech-tip">
+      技术链路：浏览器 → Axios → Spring MVC Controller → Service（@Transactional）→ MyBatis Mapper → Druid 连接池 → TiDB(4000)。
+      转账走声明式事务：余额不足时扣款影响行数为 0，抛异常自动回滚。
+    </div>
+  </div>
+
+  <!-- 新增 / 编辑 -->
+  <el-dialog v-model="formVisible" :title="form.id ? '编辑账户' : '新增账户'" width="440px">
+    <el-form :model="form" label-width="90px">
+      <el-form-item label="账户名称">
+        <el-input v-model="form.name" placeholder="请输入账户名称"></el-input>
+      </el-form-item>
+      <el-form-item label="余额">
+        <el-input-number v-model="form.balance" :min="0" :precision="2" :step="100" style="width: 100%"></el-input-number>
+      </el-form-item>
+      <el-form-item label="备注">
+        <el-input v-model="form.remark" placeholder="选填"></el-input>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="formVisible = false">取 消</el-button>
+      <el-button type="primary" @click="submitForm">确 定</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 转账 -->
+  <el-dialog v-model="transferVisible" title="转账（演示事务提交/回滚）" width="440px">
+    <el-form label-width="90px">
+      <el-form-item label="付款方ID"><el-input-number v-model="transfer.fromId" :min="1" style="width:100%"></el-input-number></el-form-item>
+      <el-form-item label="收款方ID"><el-input-number v-model="transfer.toId" :min="1" style="width:100%"></el-input-number></el-form-item>
+      <el-form-item label="金额"><el-input-number v-model="transfer.amount" :min="0.01" :precision="2" :step="10" style="width:100%"></el-input-number></el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="transferVisible = false">取 消</el-button>
+      <el-button type="primary" @click="submitTransfer">确认转账</el-button>
+    </template>
+  </el-dialog>
+
+</div>
+
+<script src="/vendor/vue.global.prod.js"></script>
+<script src="/vendor/element-plus.full.min.js"></script>
+<script src="/vendor/axios.min.js"></script>
+<script>
+const { createApp, ref, reactive, onMounted } = Vue;
+
+createApp({
+  setup() {
+    const loading = ref(false);
+    const rows = ref([]);
+    const total = ref(0);
+    const query = reactive({ pageNum: 1, pageSize: 10, searchValue: '' });
+    const stats = ref({ cnt: null, sumBalance: null, maxBalance: null, minBalance: null, dbVersion: '' });
+
+    const formVisible = ref(false);
+    const form = reactive({ id: null, name: '', balance: 0, remark: '' });
+
+    const transferVisible = ref(false);
+    const transfer = reactive({ fromId: null, toId: null, amount: 10 });
+
+    const money = (v) => {
+      if (v === null || v === undefined) return '-';
+      const n = Number(v);
+      if (isNaN(n)) return String(v);
+      return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    const api = (resp) => {
+      // AjaxResult: {code,msg,data} / TableDataInfo: {code,msg,total,rows}
+      if (resp.data && resp.data.code !== undefined && resp.data.code !== 200) {
+        ElementPlus.ElMessage.error(resp.data.msg || '操作失败');
+        throw new Error(resp.data.msg || '操作失败');
+      }
+      return resp.data;
+    };
+
+    const loadList = async () => {
+      loading.value = true;
+      try {
+        const r = await axios.get('/demo/account/list', { params: query });
+        const d = api(r);
+        rows.value = d.rows || [];
+        total.value = d.total || 0;
+      } catch (e) {
+        if (!e.message) ElementPlus.ElMessage.error('列表加载失败');
+      } finally {
+        loading.value = false;
+      }
+    };
+
+    const loadStats = async () => {
+      try {
+        const d = api(await axios.get('/demo/account/stats'));
+        stats.value = d.data || {};
+      } catch (e) { /* 已提示 */ }
+    };
+
+    const resetQuery = () => {
+      query.searchValue = '';
+      query.pageNum = 1;
+      loadList();
+    };
+
+    const openAdd = () => {
+      form.id = null; form.name = ''; form.balance = 0; form.remark = '';
+      formVisible.value = true;
+    };
+
+    const openEdit = (row) => {
+      form.id = row.id;
+      form.name = row.name;
+      form.balance = Number(row.balance);
+      form.remark = row.remark || '';
+      formVisible.value = true;
+    };
+
+    const submitForm = async () => {
+      try {
+        const payload = { name: form.name, balance: form.balance, remark: form.remark };
+        if (form.id) {
+          api(await axios.put('/demo/account', { id: form.id, ...payload }));
+        } else {
+          api(await axios.post('/demo/account', payload));
+        }
+        ElementPlus.ElMessage.success('保存成功');
+        formVisible.value = false;
+        await loadList();
+        await loadStats();
+      } catch (e) { /* 已提示 */ }
+    };
+
+    const handleDelete = async (row) => {
+      try {
+        await ElementPlus.ElMessageBox.confirm('确认删除账户「' + row.name + '」？', '提示', { type: 'warning' });
+        api(await axios.delete('/demo/account/' + row.id));
+        ElementPlus.ElMessage.success('删除成功');
+        await loadList();
+        await loadStats();
+      } catch (e) {
+        if (e !== 'cancel' && e.message) ElementPlus.ElMessage.error(e.message);
+      }
+    };
+
+    const submitTransfer = async () => {
+      try {
+        const d = api(await axios.post('/demo/account/transfer', transfer));
+        ElementPlus.ElMessage.success(d.msg || '转账成功');
+        transferVisible.value = false;
+        await loadList();
+        await loadStats();
+      } catch (e) {
+        if (e.response && e.response.data && e.response.data.msg) {
+          ElementPlus.ElMessage.error(e.response.data.msg);
+        }
+      }
+    };
+
+    onMounted(() => { loadList(); loadStats(); });
+
+    return {
+      loading, rows, total, query, stats, money,
+      formVisible, form, openAdd, openEdit, submitForm,
+      transferVisible, transfer, submitTransfer,
+      loadList, loadStats, resetQuery, handleDelete
+    };
+  }
+}).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

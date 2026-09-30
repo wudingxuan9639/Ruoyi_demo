@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.project.demo.mapper.AccountMapper">
+
+    <resultMap id="AccountResult" type="com.ruoyi.project.demo.domain.Account">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="balance" column="balance"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="createTime" column="created_at"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <sql id="selectAccountVo">
+        select id, name, balance, created_at, remark from demo_account
+    </sql>
+
+    <!-- 列表查询：支持 name 模糊 / 搜索值同时匹配 id 与 name -->
+    <select id="selectAccountList" parameterType="com.ruoyi.project.demo.domain.Account" resultMap="AccountResult">
+        <include refid="selectAccountVo"/>
+        <where>
+            <if test="name != null and name != ''">
+                and name like concat('%', #{name}, '%')
+            </if>
+            <if test="searchValue != null and searchValue != ''">
+                and (name like concat('%', #{searchValue}, '%')
+                     or cast(id as char) like concat('%', #{searchValue}, '%'))
+            </if>
+        </where>
+        order by id asc
+    </select>
+
+    <select id="selectAccountById" parameterType="Long" resultMap="AccountResult">
+        <include refid="selectAccountVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertAccount" parameterType="com.ruoyi.project.demo.domain.Account"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into demo_account (name, balance, remark)
+        values (#{name}, #{balance}, #{remark})
+    </insert>
+
+    <update id="updateAccount" parameterType="com.ruoyi.project.demo.domain.Account">
+        update demo_account
+        <set>
+            <if test="name != null and name != ''">name = #{name},</if>
+            <if test="balance != null">balance = #{balance},</if>
+            <if test="remark != null">remark = #{remark},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteAccountById" parameterType="Long">
+        delete from demo_account where id = #{id}
+    </delete>
+
+    <delete id="deleteAccountByIds" parameterType="Long">
+        delete from demo_account where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+
+    <!-- 带余额条件的扣款：余额不足时影响行数为 0 -->
+    <update id="deductBalance">
+        update demo_account set balance = balance - #{amount}
+        where id = #{id} and balance &gt;= #{amount}
+    </update>
+
+    <update id="addBalance">
+        update demo_account set balance = balance + #{amount} where id = #{id}
+    </update>
+
+    <select id="selectAccountStats" resultType="java.util.LinkedHashMap">
+        select count(*) as cnt,
+               coalesce(sum(balance), 0) as sumBalance,
+               coalesce(max(balance), 0) as maxBalance,
+               coalesce(min(balance), 0) as minBalance
+        from demo_account
+    </select>
+
+    <select id="selectDbVersion" resultType="string">
+        select version()
+    </select>
+
+</mapper>
